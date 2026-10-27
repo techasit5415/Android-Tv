@@ -4,8 +4,10 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
@@ -27,6 +29,7 @@ import android.provider.Settings;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.WindowManager;
 import android.view.ViewGroup;
 import android.view.animation.AnimationUtils;
 import android.view.animation.DecelerateInterpolator;
@@ -77,7 +80,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private int ambientColor;
     private boolean heroShown;
     private TextView greeting;
-    private TextView btnWifi;
+        private TextView btnInputs;
+    private TextView btnNowPlaying;
+    private String currentPlayingTrack = null;
+    private TextView tvRam;
+    private final ActivityManager.MemoryInfo memInfo = new ActivityManager.MemoryInfo();
+    private ActivityManager activityManager;
     private ImageView wallpaper;
     private int currentWallpaperRes = 0;
     private boolean isDockPeeking = false;
@@ -89,6 +97,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private TextView btnTopStyleText, btnTopStyleIcon;
     private TextView btnPeekUltra, btnPeekBalanced, btnPeekNone;
     private TextView btnWallAuto, btnWallDay, btnWallNight;
+    private boolean isAudioOnly = false;
+    private View audioOnlyOverlay;
     private SpringAnimation springX, springY;
     private float glassTargetX, glassTargetY;
     private boolean glassShown;
@@ -100,8 +110,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         @Override
         public void run() {
             updateGreeting();
-            updateWifiLabel();
+                    updateRamUsage();
             updateWallpaper();
+        updateRamUsage();
+            updateRamUsage();
             handler.postDelayed(this, MINUTE_MS);
         }
     };
@@ -129,9 +141,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         ambient.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) ->
                 ambientGlow.setGradientRadius((r - l) * 0.62f));
         greeting = findViewById(R.id.greeting);
-        btnWifi = findViewById(R.id.btnWifi);
+                btnInputs = findViewById(R.id.btnInputs);
+        if (btnInputs != null) {
+            btnInputs.setOnClickListener(v -> showInputs());
+        }
         wallpaper = findViewById(R.id.wallpaper);
         updateWallpaper();
+        updateRamUsage();
 
         grid = findViewById(R.id.grid);
         grid.setLayoutManager(new GridLayoutManager(this, COLUMNS));
@@ -170,21 +186,78 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             s.setSpring(new SpringForce().setStiffness(360f).setDampingRatio(SpringForce.DAMPING_RATIO_NO_BOUNCY));
         }
 
-        View btnCalendar = findViewById(R.id.btnCalendar);
         View btnSettings = findViewById(R.id.btnSettings);
-        btnCalendar.setOnClickListener(v -> showCalendar());
-        btnWifi.setOnClickListener(v -> open(new Intent(Settings.ACTION_WIFI_SETTINGS)));
-        btnSettings.setOnClickListener(v -> showSettings());
-        isTopBarShowText = prefs.getBoolean("top_bar_show_text", true);
-        applyTopBarStyle(isTopBarShowText);
+        if (btnSettings != null) {
+            btnSettings.setOnClickListener(v -> showSettings());
+        }
+        View dateView = findViewById(R.id.date);
+        if (dateView != null) {
+            dateView.setOnClickListener(v -> showCalendar());
+        }
+        tvRam = findViewById(R.id.tvRam);
 
-        // Keep focus on the top bar at its ends and at the top: Android's focus finder would otherwise
-        // jump to a tile far below when there is nothing in that direction.
+        updateWeatherAsync();
+        updateUpcomingEventAsync();
+
+        android.content.IntentFilter pkgFilter = new android.content.IntentFilter();
+        pkgFilter.addAction(android.content.Intent.ACTION_PACKAGE_ADDED);
+        pkgFilter.addAction(android.content.Intent.ACTION_PACKAGE_REMOVED);
+        pkgFilter.addAction(android.content.Intent.ACTION_PACKAGE_REPLACED);
+        pkgFilter.addDataScheme("package");
+        registerReceiver(new android.content.BroadcastReceiver() {
+            @Override
+            public void onReceive(android.content.Context context, android.content.Intent intent) {
+                if (adapter != null) {
+                    adapter.reload();
+                }
+            }
+        }, pkgFilter);
+
         View.OnKeyListener pillKeys = (v, keyCode, event) -> {
             if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
             if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return true;
-            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT && v.getId() == R.id.btnCalendar) return true;
-            if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && v.getId() == R.id.btnSettings) return true;
+
+            // Direct 1-click Navigation between top bar pills
+            if (v == btnSettings) {
+                if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                    if (btnInputs != null) btnInputs.requestFocus();
+                    return true;
+                }
+                if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) return true;
+            } else if (v == btnInputs) {
+                if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                    if (btnSettings != null) btnSettings.requestFocus();
+                    return true;
+                }
+                if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                    if (btnNowPlaying != null && btnNowPlaying.getVisibility() == View.VISIBLE) {
+                        btnNowPlaying.requestFocus();
+                    } else if (dateView != null) {
+                        dateView.requestFocus();
+                    }
+                    return true;
+                }
+            } else if (v == btnNowPlaying) {
+                if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                    if (btnInputs != null) btnInputs.requestFocus();
+                    return true;
+                }
+                if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                    if (dateView != null) dateView.requestFocus();
+                    return true;
+                }
+            } else if (v == dateView) {
+                if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                    if (btnNowPlaying != null && btnNowPlaying.getVisibility() == View.VISIBLE) {
+                        btnNowPlaying.requestFocus();
+                    } else if (btnInputs != null) {
+                        btnInputs.requestFocus();
+                    }
+                    return true;
+                }
+                if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) return true;
+            }
+
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
                 setDockPeek(false, true);
                 int target = (lastFocused >= 0 && lastFocused < COLUMNS) ? lastFocused : 0;
@@ -193,9 +266,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
             return false;
         };
-        btnCalendar.setOnKeyListener(pillKeys);
-        btnWifi.setOnKeyListener(pillKeys);
-        btnSettings.setOnKeyListener(pillKeys);
+        if (btnNowPlaying != null) btnNowPlaying.setOnKeyListener(pillKeys);
+        if (btnInputs != null) btnInputs.setOnKeyListener(pillKeys);
+        if (btnSettings != null) btnSettings.setOnKeyListener(pillKeys);
+        if (dateView != null) dateView.setOnKeyListener(pillKeys);
 
         // Hide the glass/hero and peek the dock when focus leaves the tiles.
         getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener((oldF, newF) -> {
@@ -224,16 +298,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         glass.setAlpha(0f);
         heroShown = false;
         heroName.setAlpha(0f);
+        MediaNotificationListener.setCallback(this::onMediaUpdated);
+        MediaNotificationListener.requestUpdate();
         ambient.setAlpha(0f);
 
-        if (adapter.getItemCount() == 0) {
+        if (adapter != null) {
             adapter.reload();
-            grid.scheduleLayoutAnimation();
         }
 
         updateGreeting();
-        updateWifiLabel();
+                updateRamUsage();
         updateWallpaper();
+        updateRamUsage();
 
         handler.removeCallbacks(minuteTick);
         handler.postDelayed(minuteTick, MINUTE_MS);
@@ -242,7 +318,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (isInitialLaunch) {
             isInitialLaunch = false;
             grid.post(() -> {
-                View btn = findViewById(R.id.btnCalendar);
+                View btn = findViewById(R.id.btnInputs);
                 if (btn != null) btn.requestFocus();
                 setDockPeek(true, false);
             });
@@ -253,50 +329,87 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onPause() {
         super.onPause();
         handler.removeCallbacks(minuteTick);
-    }
+        }
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        if (isAudioOnly) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                int code = event.getKeyCode();
+                if (code != KeyEvent.KEYCODE_VOLUME_UP &&
+                    code != KeyEvent.KEYCODE_VOLUME_DOWN &&
+                    code != KeyEvent.KEYCODE_VOLUME_MUTE) {
+                    exitAudioOnlyMode();
+                    return true;
+                }
+            }
+            return super.dispatchKeyEvent(event);
+        }
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
             int code = event.getKeyCode();
-            if (isPurpleOrMediaKey(code)) {
-                launchStremio();
+            if (isAppShortcutOrMediaKey(code)) {
+                launchAisPlay();
                 return true;
             }
         }
         return super.dispatchKeyEvent(event);
     }
 
-    private boolean isPurpleOrMediaKey(int code) {
+    private boolean isAppShortcutOrMediaKey(int code) {
         switch (code) {
-            case KeyEvent.KEYCODE_MEDIA_PLAY:
-            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
-            case KeyEvent.KEYCODE_DVR:
+            case KeyEvent.KEYCODE_TV:
             case KeyEvent.KEYCODE_GUIDE:
+            case KeyEvent.KEYCODE_DVR:
+            case KeyEvent.KEYCODE_WINDOW:
             case KeyEvent.KEYCODE_BUTTON_1:
             case KeyEvent.KEYCODE_BUTTON_2:
             case KeyEvent.KEYCODE_BUTTON_3:
             case KeyEvent.KEYCODE_BUTTON_4:
+            case KeyEvent.KEYCODE_BUTTON_5:
+            case KeyEvent.KEYCODE_BUTTON_6:
+            case KeyEvent.KEYCODE_BUTTON_7:
+            case KeyEvent.KEYCODE_BUTTON_8:
+            case KeyEvent.KEYCODE_BUTTON_9:
+            case KeyEvent.KEYCODE_BUTTON_10:
+            case KeyEvent.KEYCODE_BUTTON_11:
+            case KeyEvent.KEYCODE_BUTTON_12:
+            case KeyEvent.KEYCODE_BUTTON_13:
+            case KeyEvent.KEYCODE_BUTTON_14:
+            case KeyEvent.KEYCODE_BUTTON_15:
+            case KeyEvent.KEYCODE_BUTTON_16:
             case KeyEvent.KEYCODE_PROG_RED:
             case KeyEvent.KEYCODE_PROG_GREEN:
             case KeyEvent.KEYCODE_PROG_YELLOW:
             case KeyEvent.KEYCODE_PROG_BLUE:
-            case KeyEvent.KEYCODE_TV_MEDIA_CONTEXT_MENU:
             case KeyEvent.KEYCODE_LAST_CHANNEL:
+            case KeyEvent.KEYCODE_TV_DATA_SERVICE:
+            case KeyEvent.KEYCODE_TV_RADIO_SERVICE:
+            case KeyEvent.KEYCODE_TV_TELETEXT:
+            case KeyEvent.KEYCODE_TV_MEDIA_CONTEXT_MENU:
             case 284:
             case 285:
             case 286:
             case 287:
+            case 393:
+            case 601:
+            case 644:
+            case 645:
+            case 647:
+            case 756:
+            case 757:
+            case 758:
+            case 759:
+            case 761:
                 return true;
             default:
                 return false;
         }
     }
 
-    private void launchStremio() {
+    private void launchAisPlay() {
         try {
-            Intent i = getPackageManager().getLeanbackLaunchIntentForPackage("com.stremio.one");
-            if (i == null) i = getPackageManager().getLaunchIntentForPackage("com.stremio.one");
+            Intent i = getPackageManager().getLeanbackLaunchIntentForPackage("com.ais.mimo.aisplay.tv");
+            if (i == null) i = getPackageManager().getLaunchIntentForPackage("com.ais.mimo.aisplay.tv");
             if (i != null) {
                 i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
                 startActivity(i);
@@ -321,7 +434,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 focusTile(0);
             } else {
                 // Return from dock to top bar (peek mode, full photo view)
-                View btn = findViewById(R.id.btnCalendar);
+                View btn = findViewById(R.id.btnInputs);
                 if (btn != null) btn.requestFocus();
             }
         }
@@ -391,7 +504,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             calendarOverlay.setVisibility(View.GONE);
             grid.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
             ((ViewGroup) findViewById(R.id.topButtons)).setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
-            View btn = findViewById(R.id.btnCalendar);
+            View btn = findViewById(R.id.btnInputs);
             if (btn != null) btn.requestFocus();
         }).start();
     }
@@ -555,6 +668,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     public void onTileFocused(int position, View card) {
+        if ((settingsOverlay != null && settingsOverlay.getVisibility() == View.VISIBLE) ||
+            (calendarOverlay != null && calendarOverlay.getVisibility() == View.VISIBLE)) {
+            hideGlass();
+            hideHero();
+            return;
+        }
         lastFocused = position;
         // Tile rect in root coordinates, normalized by subtracting current grid translation.
         Rect r = new Rect(0, 0, card.getWidth(), card.getHeight());
@@ -645,6 +764,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     public boolean onTileVerticalKey(int position, int keyCode) {
+        if ((settingsOverlay != null && settingsOverlay.getVisibility() == View.VISIBLE) ||
+            (calendarOverlay != null && calendarOverlay.getVisibility() == View.VISIBLE)) {
+            return true;
+        }
         int count = adapter.getItemCount();
         int target;
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
@@ -727,34 +850,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
-    /** Shows the Wi-Fi network name on the button when we can read it, otherwise the connection type. */
-    private void updateWifiLabel() {
-        if (!isTopBarShowText) {
-            if (btnWifi != null) btnWifi.setText("");
-            return;
-        }
-        String text = getString(R.string.wifi);
-        try {
-            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-            Network net = cm != null ? cm.getActiveNetwork() : null;
-            NetworkCapabilities caps = net != null ? cm.getNetworkCapabilities(net) : null;
-            if (caps == null) {
-                text = getString(R.string.offline);
-            } else if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
-                text = getString(R.string.ethernet);
-            } else if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-                WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-                WifiInfo info = wm != null ? wm.getConnectionInfo() : null;
-                String ssid = info != null ? info.getSSID() : null;
-                if (ssid != null) {
-                    ssid = ssid.replace("\"", "").trim();
-                    if (!ssid.isEmpty() && !ssid.contains("unknown") && !ssid.equals("0x")) text = ssid;
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        if (btnWifi != null) btnWifi.setText(text);
-    }
+    private void updateWifiLabel() {}
 
     private void open(Intent i) {
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -770,7 +866,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
         LinearLayout rows = panel.findViewById(R.id.rows);
 
-        int width = (int) (240 * density);
+        int width = (int) (260 * density);
         final PopupWindow popup = new PopupWindow(panel, width, ViewGroup.LayoutParams.WRAP_CONTENT, true);
         popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));   // needed for Back to dismiss
         popup.setOutsideTouchable(true);
@@ -789,24 +885,46 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             });
             for (TvInputInfo info : inputs) {
                 if (!info.isPassthroughInput()) continue;
-                CharSequence l = info.loadLabel(this);
-                String label = l == null ? info.getId() : l.toString();
-                boolean hdmi = info.getType() == TvInputInfo.TYPE_HDMI;
-                if (hdmi && !label.toUpperCase().contains("HDMI")) label = "HDMI " + label;
                 final String id = info.getId();
+                String label;
+                if (id.contains("HW1413744128")) {
+                    label = "HDMI 1 (ARC)";
+                } else if (id.contains("HW1413744384")) {
+                    label = "HDMI 2";
+                } else if (id.contains("HW1413744640")) {
+                    label = "HDMI 3";
+                } else if (id.contains("HW1413743104")) {
+                    label = "AV";
+                } else {
+                    CharSequence l = info.loadLabel(this);
+                    label = l == null ? id : l.toString();
+                    if (info.getType() == TvInputInfo.TYPE_HDMI && !label.toUpperCase().contains("HDMI")) {
+                        label = "HDMI " + label;
+                    }
+                }
+
+                boolean hdmi = info.getType() == TvInputInfo.TYPE_HDMI;
                 int state = tim.getInputState(id);
                 if (!hdmi && rows.getChildCount() > 0 && !sawNonHdmi) addSeparator(rows);
                 if (!hdmi) sawNonHdmi = true;
                 addInputRow(rows, popup, hdmi ? R.drawable.ic_input : R.drawable.ic_av, label, state,
-                        () -> open(new Intent(Intent.ACTION_VIEW).setDataAndType(
-                                TvContract.buildChannelUriForPassthroughInput(id), "vnd.android.cursor.item/channel")));
+                        () -> {
+                            Intent intent = new Intent(Intent.ACTION_VIEW)
+                                    .setDataAndType(TvContract.buildChannelUriForPassthroughInput(id), "vnd.android.cursor.item/channel")
+                                    .setComponent(new ComponentName("com.tcl.tv", "com.tcl.tv.TVActivity"));
+                            open(intent);
+                        });
             }
         }
-        Intent liveTv = liveTvPkg.isEmpty() ? null : getPackageManager().getLeanbackLaunchIntentForPackage(liveTvPkg);
-        if (liveTv != null) {
-            if (rows.getChildCount() > 0) addSeparator(rows);
-            addInputRow(rows, popup, R.drawable.ic_livetv, getString(R.string.live_tv), -1, () -> open(liveTv));
-        }
+        
+        // Add option to open full TV Source Menu
+        if (rows.getChildCount() > 0) addSeparator(rows);
+        addInputRow(rows, popup, R.drawable.ic_settings, "All Sources", -1, () -> {
+            Intent intent = new Intent();
+            intent.setComponent(new ComponentName("com.tcl.tv", "com.tcl.sourcemenu.sourcemanager.MainActivity"));
+            open(intent);
+        });
+
         if (rows.getChildCount() == 0) {
             Toast.makeText(this, R.string.no_inputs, Toast.LENGTH_SHORT).show();
             return;
@@ -817,7 +935,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         panel.setPivotY(0f);
         panel.setScaleY(0.92f);
         panel.setTranslationY(-8 * density);
-        popup.showAtLocation(root, Gravity.CENTER, 0, 0);
+        if (btnInputs != null) {
+            popup.showAsDropDown(btnInputs, (int) (-40 * density), (int) (8 * density));
+        } else {
+            popup.showAtLocation(root, Gravity.CENTER, 0, 0);
+        }
         panel.animate().alpha(1f).scaleY(1f).translationY(0f).setDuration(220)
                 .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
         rows.getChildAt(0).requestFocus();
@@ -871,24 +993,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private void applyTopBarStyle(boolean showText) {
         isTopBarShowText = showText;
-        TextView btnCalendar = findViewById(R.id.btnCalendar);
-        TextView btnSettings = findViewById(R.id.btnSettings);
-
-        int padStart = (int) ((showText ? 16 : 11) * density);
-        int padEnd = (int) ((showText ? 20 : 11) * density);
-        int drawPad = (int) ((showText ? 9 : 0) * density);
-
-        TextView[] pills = new TextView[]{btnCalendar, btnWifi, btnSettings};
-        for (TextView p : pills) {
-            if (p != null) {
-                p.setPadding(padStart, 0, padEnd, 0);
-                p.setCompoundDrawablePadding(drawPad);
-            }
-        }
-
-        if (btnCalendar != null) btnCalendar.setText(showText ? "Calendar" : "");
-        if (btnSettings != null) btnSettings.setText(showText ? getString(R.string.settings) : "");
-        updateWifiLabel();
+        if (tvRam == null) tvRam = findViewById(R.id.tvRam);
+        if (btnNowPlaying == null) btnNowPlaying = findViewById(R.id.btnNowPlaying);
+        if (btnInputs == null) btnInputs = findViewById(R.id.btnInputs);
+        updateRamUsage();
     }
 
     private void showSettings() {
@@ -896,8 +1004,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             settingsOverlay = findViewById(R.id.settingsOverlay);
             findViewById(R.id.btnSettingsClose).setOnClickListener(v -> hideSettings());
 
-            btnTopStyleText = findViewById(R.id.btnTopStyleText);
-            btnTopStyleIcon = findViewById(R.id.btnTopStyleIcon);
             btnPeekUltra = findViewById(R.id.btnPeekUltra);
             btnPeekBalanced = findViewById(R.id.btnPeekBalanced);
             btnPeekNone = findViewById(R.id.btnPeekNone);
@@ -905,46 +1011,67 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             btnWallDay = findViewById(R.id.btnWallDay);
             btnWallNight = findViewById(R.id.btnWallNight);
 
-            btnTopStyleText.setOnClickListener(v -> setTopBarStyle(true));
-            btnTopStyleIcon.setOnClickListener(v -> setTopBarStyle(false));
+            if (btnPeekUltra != null) btnPeekUltra.setOnClickListener(v -> setPeekDepth("ultra"));
+            if (btnPeekBalanced != null) btnPeekBalanced.setOnClickListener(v -> setPeekDepth("balanced"));
+            if (btnPeekNone != null) btnPeekNone.setOnClickListener(v -> setPeekDepth("none"));
 
-            btnPeekUltra.setOnClickListener(v -> setPeekDepth("ultra"));
-            btnPeekBalanced.setOnClickListener(v -> setPeekDepth("balanced"));
-            btnPeekNone.setOnClickListener(v -> setPeekDepth("none"));
+            if (btnWallAuto != null) btnWallAuto.setOnClickListener(v -> setWallpaperTheme("auto"));
+            if (btnWallDay != null) btnWallDay.setOnClickListener(v -> setWallpaperTheme("day"));
+            if (btnWallNight != null) btnWallNight.setOnClickListener(v -> setWallpaperTheme("night"));
 
-            btnWallAuto.setOnClickListener(v -> setWallpaperTheme("auto"));
-            btnWallDay.setOnClickListener(v -> setWallpaperTheme("day"));
-            btnWallNight.setOnClickListener(v -> setWallpaperTheme("night"));
+            View btnAudioOnly = findViewById(R.id.btnAudioOnly);
+            if (btnAudioOnly != null) {
+                btnAudioOnly.setOnClickListener(v -> {
+                    hideSettings();
+                    enableAudioOnlyMode();
+                });
+            }
 
-            findViewById(R.id.btnSysSettings).setOnClickListener(v -> open(new Intent(Settings.ACTION_SETTINGS)));
-            findViewById(R.id.btnSysWifi).setOnClickListener(v -> open(new Intent(Settings.ACTION_WIFI_SETTINGS)));
-            findViewById(R.id.btnSysApps).setOnClickListener(v -> open(new Intent(Settings.ACTION_MANAGE_ALL_APPLICATIONS_SETTINGS)));
+            View sysSet = findViewById(R.id.btnSysSettings);
+            if (sysSet != null) sysSet.setOnClickListener(v -> open(new Intent(Settings.ACTION_SETTINGS)));
+            View sysWifi = findViewById(R.id.btnSysWifi);
+            if (sysWifi != null) sysWifi.setOnClickListener(v -> open(new Intent(Settings.ACTION_WIFI_SETTINGS)));
+            View sysApps = findViewById(R.id.btnSysApps);
+            if (sysApps != null) sysApps.setOnClickListener(v -> open(new Intent(Settings.ACTION_MANAGE_ALL_APPLICATIONS_SETTINGS)));
+            settingsOverlay.setOnClickListener(v -> hideSettings());
         }
 
         updateSettingsUI();
+        grid.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+        ((ViewGroup) findViewById(R.id.topButtons)).setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+        hideGlass();
+        hideHero();
         settingsOverlay.setVisibility(View.VISIBLE);
         settingsOverlay.setAlpha(0f);
-        settingsOverlay.animate().alpha(1f).setDuration(220).start();
-        findViewById(R.id.btnSettingsClose).requestFocus();
+        settingsOverlay.animate().alpha(1f).setDuration(200).start();
+        settingsOverlay.post(() -> {
+            View firstBtn = findViewById(R.id.btnWallAuto);
+            if (firstBtn != null) {
+                firstBtn.setFocusable(true);
+                firstBtn.setFocusableInTouchMode(true);
+                firstBtn.requestFocus();
+            } else {
+                View closeBtn = findViewById(R.id.btnSettingsClose);
+                if (closeBtn != null) closeBtn.requestFocus();
+            }
+        });
     }
 
     private void hideSettings() {
         if (settingsOverlay == null || settingsOverlay.getVisibility() != View.VISIBLE) return;
         settingsOverlay.animate().alpha(0f).setDuration(180).withEndAction(() -> {
             settingsOverlay.setVisibility(View.GONE);
+            grid.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+            ((ViewGroup) findViewById(R.id.topButtons)).setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
             View btn = findViewById(R.id.btnSettings);
             if (btn != null) btn.requestFocus();
         }).start();
     }
 
     private void updateSettingsUI() {
-        if (btnTopStyleText == null) return;
-        btnTopStyleText.setSelected(isTopBarShowText);
-        btnTopStyleIcon.setSelected(!isTopBarShowText);
-
-        btnPeekUltra.setSelected("ultra".equals(peekDepthPref));
-        btnPeekBalanced.setSelected("balanced".equals(peekDepthPref));
-        btnPeekNone.setSelected("none".equals(peekDepthPref));
+        if (btnPeekUltra != null) btnPeekUltra.setSelected("ultra".equals(peekDepthPref));
+        if (btnPeekBalanced != null) btnPeekBalanced.setSelected("balanced".equals(peekDepthPref));
+        if (btnPeekNone != null) btnPeekNone.setSelected("none".equals(peekDepthPref));
 
         String wTheme = getSharedPreferences("tvhome_prefs", MODE_PRIVATE).getString("wallpaper_theme", "auto");
         btnWallAuto.setSelected("auto".equals(wTheme));
@@ -971,6 +1098,243 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private void setWallpaperTheme(String theme) {
         getSharedPreferences("tvhome_prefs", MODE_PRIVATE).edit().putString("wallpaper_theme", theme).apply();
         updateWallpaper();
+        updateRamUsage();
         updateSettingsUI();
+    }
+
+    private void onMediaUpdated(String track, String artist, boolean isPlaying, String packageName) {
+        if (isFinishing() || isDestroyed()) return;
+        runOnUiThread(() -> {
+            if (btnNowPlaying == null) btnNowPlaying = findViewById(R.id.btnNowPlaying);
+            if (btnNowPlaying == null) return;
+
+            if (isPlaying && track != null && !track.trim().isEmpty()) {
+                String label = track;
+                if (artist != null && !artist.trim().isEmpty()) {
+                    label = track + " • " + artist;
+                }
+                currentPlayingTrack = label;
+                btnNowPlaying.setText(isTopBarShowText ? label : "");
+                btnNowPlaying.setVisibility(View.VISIBLE);
+                btnNowPlaying.setSelected(true);
+            } else {
+                btnNowPlaying.setVisibility(View.GONE);
+                currentPlayingTrack = null;
+            }
+        });
+    }
+
+    private void launchPlayingApp() {
+        try {
+            Intent i = getPackageManager().getLeanbackLaunchIntentForPackage("com.spotify.tv.android");
+            if (i == null) i = getPackageManager().getLaunchIntentForPackage("com.spotify.tv.android");
+            if (i != null) {
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        MediaNotificationListener.setCallback(null);
+    }
+
+
+    private void cleanRam() {
+        if (activityManager == null) {
+            activityManager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+        }
+        long beforeAvail = 0;
+        if (activityManager != null) {
+            activityManager.getMemoryInfo(memInfo);
+            beforeAvail = memInfo.availMem;
+        }
+        System.gc();
+        Runtime.getRuntime().gc();
+        updateRamUsage();
+        long afterAvail = 0;
+        if (activityManager != null) {
+            activityManager.getMemoryInfo(memInfo);
+            afterAvail = memInfo.availMem;
+        }
+        long freedMb = Math.max(0, (afterAvail - beforeAvail) / (1024 * 1024));
+        if (freedMb > 0) {
+            Toast.makeText(this, "เคลียร์ RAM สำเร็จ (คืนพื้นที่ " + freedMb + " MB)", Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "RAM ปัจจุบัน: " + (tvRam != null ? tvRam.getText() : ""), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void updateRamUsage() {
+        if (activityManager == null) {
+            activityManager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+        }
+        if (activityManager != null) {
+            activityManager.getMemoryInfo(memInfo);
+            long totalMem = memInfo.totalMem;
+            long availMem = memInfo.availMem;
+            long usedMem = totalMem - availMem;
+            int percent = (int) Math.round((usedMem * 100.0) / totalMem);
+
+            double usedGb = usedMem / (1024.0 * 1024.0 * 1024.0);
+            double totalGb = totalMem / (1024.0 * 1024.0 * 1024.0);
+
+            String text;
+            if (isTopBarShowText) {
+                text = String.format(Locale.US, "%.1f / %.1f GB (%d%%)", usedGb, totalGb, percent);
+            } else {
+                text = String.format(Locale.US, "%d%%", percent);
+            }
+
+            if (tvRam == null) tvRam = findViewById(R.id.tvRam);
+            if (tvRam != null) {
+                tvRam.setText(text);
+            }
+        }
+    }
+
+    private void enableAudioOnlyMode() {
+        isAudioOnly = true;
+        if (audioOnlyOverlay == null) {
+            audioOnlyOverlay = new View(this);
+            audioOnlyOverlay.setBackgroundColor(0xFF000000);
+            audioOnlyOverlay.setFocusable(true);
+            audioOnlyOverlay.setClickable(true);
+            root.addView(audioOnlyOverlay, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        }
+        audioOnlyOverlay.setVisibility(View.VISIBLE);
+        audioOnlyOverlay.bringToFront();
+        audioOnlyOverlay.requestFocus();
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.screenBrightness = 0.0f;
+        getWindow().setAttributes(lp);
+        Toast.makeText(this, "โหมดปิดจอภาพ (กดปุ่มใดๆ เพื่อเปิดจอ)", Toast.LENGTH_SHORT).show();
+    }
+
+    private void exitAudioOnlyMode() {
+        if (!isAudioOnly) return;
+        isAudioOnly = false;
+        if (audioOnlyOverlay != null) {
+            audioOnlyOverlay.setVisibility(View.GONE);
+        }
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.screenBrightness = -1.0f;
+        getWindow().setAttributes(lp);
+    }
+
+
+
+    private void updateWeatherAsync() {
+        new Thread(() -> {
+            try {
+                String city = "กรุงเทพฯ";
+                double lat = 13.7563;
+                double lon = 100.5018;
+                try {
+                    java.net.URL ipUrl = new java.net.URL("http://ip-api.com/json");
+                    java.net.HttpURLConnection ipConn = (java.net.HttpURLConnection) ipUrl.openConnection();
+                    ipConn.setConnectTimeout(4000);
+                    ipConn.setReadTimeout(4000);
+                    if (ipConn.getResponseCode() == 200) {
+                        java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(ipConn.getInputStream()));
+                        StringBuilder sb = new StringBuilder();
+                        String l;
+                        while ((l = r.readLine()) != null) sb.append(l);
+                        r.close();
+                        org.json.JSONObject ipJson = new org.json.JSONObject(sb.toString());
+                        lat = ipJson.optDouble("lat", lat);
+                        lon = ipJson.optDouble("lon", lon);
+                        String rawCity = ipJson.optString("city", "Bangkok");
+                        if ("Bangkok".equalsIgnoreCase(rawCity)) {
+                            city = "กรุงเทพฯ";
+                        } else {
+                            city = rawCity;
+                        }
+                    }
+                } catch (Exception ignored) {}
+
+                String urlStr = String.format(java.util.Locale.US,
+                        "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=temperature_2m",
+                        lat, lon);
+                java.net.URL url = new java.net.URL(urlStr);
+                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(4000);
+                conn.setReadTimeout(4000);
+                if (conn.getResponseCode() == 200) {
+                    java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(conn.getInputStream()));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) sb.append(line);
+                    reader.close();
+                    org.json.JSONObject obj = new org.json.JSONObject(sb.toString());
+                    org.json.JSONObject current = obj.getJSONObject("current");
+                    double temp = current.getDouble("temperature_2m");
+                    final String weatherStr = Math.round(temp) + "°C " + city;
+                    runOnUiThread(() -> {
+                        TextView tvWeather = findViewById(R.id.tvWeather);
+                        if (tvWeather != null) tvWeather.setText(weatherStr);
+                    });
+                }
+            } catch (Exception ignored) {}
+        }).start();
+    }
+
+    private void updateUpcomingEventAsync() {
+        new Thread(() -> {
+            try {
+                Calendar todayCal = Calendar.getInstance();
+                todayCal.set(Calendar.HOUR_OF_DAY, 0);
+                todayCal.set(Calendar.MINUTE, 0);
+                todayCal.set(Calendar.SECOND, 0);
+                long startOfDay = todayCal.getTimeInMillis();
+                long endOfDay = startOfDay + 86400000L;
+
+                android.net.Uri uri = android.provider.CalendarContract.Events.CONTENT_URI;
+                android.database.Cursor cursor = getContentResolver().query(
+                        uri,
+                        new String[]{"title", "dtstart", "allDay"},
+                        "dtstart >= ? AND deleted = 0",
+                        new String[]{String.valueOf(startOfDay)},
+                        "dtstart ASC");
+
+                String eventDisplay = "ไม่มีนัดหมายวันนี้";
+                if (cursor != null) {
+                    if (cursor.moveToFirst()) {
+                        String title = cursor.getString(0);
+                        long start = cursor.getLong(1);
+                        boolean allDay = cursor.getInt(2) == 1;
+
+                        if (start < endOfDay) {
+                            Calendar c = Calendar.getInstance();
+                            c.setTimeInMillis(start);
+                            String timeStr = allDay ? "ตลอดวัน" : String.format(java.util.Locale.getDefault(), "%02d:%02d", c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE));
+                            eventDisplay = "วันนี้: " + title + " (" + timeStr + ")";
+                        } else {
+                            Calendar c = Calendar.getInstance();
+                            c.setTimeInMillis(start);
+                            String[] months = {"ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."};
+                            int m = c.get(Calendar.MONTH);
+                            String mName = (m >= 0 && m < months.length) ? months[m] : "";
+                            eventDisplay = title + " (" + c.get(Calendar.DAY_OF_MONTH) + " " + mName + ")";
+                        }
+                    }
+                    cursor.close();
+                }
+
+                final String finalEventStr = eventDisplay;
+                runOnUiThread(() -> {
+                    TextView tvEvent = findViewById(R.id.tvUpcomingEvent);
+                    if (tvEvent != null) tvEvent.setText(finalEventStr);
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    TextView tvEvent = findViewById(R.id.tvUpcomingEvent);
+                    if (tvEvent != null) tvEvent.setText("ไม่มีนัดหมายวันนี้");
+                });
+            }
+        }).start();
     }
 }

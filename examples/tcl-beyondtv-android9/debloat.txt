@@ -1,0 +1,33 @@
+# TCL BeyondTV (Android 9 Pie, Realtek) Debloat List
+# Applied via: pm disable-user --user 0 <pkg>
+# Restored via: pm enable <pkg>
+
+# Telemetry & Analytics
+com.tcl.bi
+
+# Retail Demo / Store Mode
+com.tcl.esticker
+com.tcl.showmode
+
+# Content recommendations, Promos & Ads
+com.tcl.waterfall.overseas
+com.tcl.tv.tclhome_master
+com.tcl.tv.tclhome_passive
+com.tcl.partnercustomizer
+com.tcl.partnercustomizer.resource
+com.google.android.tvrecommendations
+com.google.android.leanbacklauncher.recommendations
+
+# Background cleaners & duplicate stores
+com.tcl.tvweishi
+com.tcl.copydatatotv
+com.tcl.appmarket2
+com.tcl.messagebox
+com.tcl.notereminder
+com.tcl.usercenter
+com.tcl.useragreement
+com.tcl.MultiScreenInteraction_TV
+
+# Telemetry & feedback
+com.google.android.feedback
+com.google.android.tv.bugreportsender

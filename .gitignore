@@ -1,10 +1,22 @@
 tools/venv/
 tools/adbkey/
 tools/__pycache__/
+tools/jdk17/
+tools/jdk-17.zip
 launcher/.gradle/
 launcher/build/
 launcher/app/build/
 launcher/local.properties
-# your own TV's dumps (serial, android_id, device names) stay local
+tot_forwarder/.gradle/
+tot_forwarder/build/
 backup/
+backup-tcl-beyondtv/
 .DS_Store
+
+# Root temp screenshots & scratch scripts
+/*.png
+/*.jpg
+/*.apk
+/clean_emojis.py
+/update_main_keys.py
+/update_settings.py

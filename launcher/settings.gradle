@@ -13,4 +13,5 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "tvhome"
-include ':app'
+include ':app', ':tot_forwarder'
+project(':tot_forwarder').projectDir = new File(rootDir, '../tot_forwarder')
