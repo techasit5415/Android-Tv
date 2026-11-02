@@ -97,6 +97,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private TextView btnTopStyleText, btnTopStyleIcon;
     private TextView btnPeekUltra, btnPeekBalanced, btnPeekNone;
     private TextView btnWallAuto, btnWallDay, btnWallNight;
+    private TextView btnSleepOff, btnSleep30, btnSleep60, btnSleep90;
+    private int sleepTimerMinutes = 0;
+    private final Runnable sleepTimerRunnable = () -> {
+        try {
+            android.widget.Toast.makeText(this, "กำลังเข้าสู่โหมดพักหน้าจอ (Sleep Timer)", android.widget.Toast.LENGTH_SHORT).show();
+            Runtime.getRuntime().exec("input keyevent 26");
+        } catch (Exception e) {
+            enableAudioOnlyMode();
+        }
+    };
     private boolean isAudioOnly = false;
     private View audioOnlyOverlay;
     private SpringAnimation springX, springY;
@@ -193,6 +203,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         View dateView = findViewById(R.id.date);
         if (dateView != null) {
             dateView.setOnClickListener(v -> showCalendar());
+        }
+        View tvUpcomingEvent = findViewById(R.id.tvUpcomingEvent);
+        if (tvUpcomingEvent != null) {
+            tvUpcomingEvent.setFocusable(true);
+            tvUpcomingEvent.setClickable(true);
+            tvUpcomingEvent.setOnClickListener(v -> showCalendar());
+        }
+        if (btnNowPlaying != null) {
+            btnNowPlaying.setOnClickListener(v -> launchPlayingApp());
+            btnNowPlaying.setOnLongClickListener(v -> {
+                enableAudioOnlyMode();
+                return true;
+            });
         }
         tvRam = findViewById(R.id.tvRam);
 
@@ -1019,6 +1042,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (btnWallDay != null) btnWallDay.setOnClickListener(v -> setWallpaperTheme("day"));
             if (btnWallNight != null) btnWallNight.setOnClickListener(v -> setWallpaperTheme("night"));
 
+            btnSleepOff = findViewById(R.id.btnSleepOff);
+            btnSleep30 = findViewById(R.id.btnSleep30);
+            btnSleep60 = findViewById(R.id.btnSleep60);
+            btnSleep90 = findViewById(R.id.btnSleep90);
+            if (btnSleepOff != null) btnSleepOff.setOnClickListener(v -> setSleepTimer(0));
+            if (btnSleep30 != null) btnSleep30.setOnClickListener(v -> setSleepTimer(30));
+            if (btnSleep60 != null) btnSleep60.setOnClickListener(v -> setSleepTimer(60));
+            if (btnSleep90 != null) btnSleep90.setOnClickListener(v -> setSleepTimer(90));
+
             View btnAudioOnly = findViewById(R.id.btnAudioOnly);
             if (btnAudioOnly != null) {
                 btnAudioOnly.setOnClickListener(v -> {
@@ -1077,6 +1109,23 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnWallAuto.setSelected("auto".equals(wTheme));
         btnWallDay.setSelected("day".equals(wTheme));
         btnWallNight.setSelected("night".equals(wTheme));
+
+        if (btnSleepOff != null) btnSleepOff.setSelected(sleepTimerMinutes == 0);
+        if (btnSleep30 != null) btnSleep30.setSelected(sleepTimerMinutes == 30);
+        if (btnSleep60 != null) btnSleep60.setSelected(sleepTimerMinutes == 60);
+        if (btnSleep90 != null) btnSleep90.setSelected(sleepTimerMinutes == 90);
+    }
+
+    private void setSleepTimer(int minutes) {
+        sleepTimerMinutes = minutes;
+        handler.removeCallbacks(sleepTimerRunnable);
+        if (minutes > 0) {
+            handler.postDelayed(sleepTimerRunnable, minutes * 60 * 1000L);
+            android.widget.Toast.makeText(this, "ตั้งเวลาปิดทีวีใน " + minutes + " นาที", android.widget.Toast.LENGTH_SHORT).show();
+        } else {
+            android.widget.Toast.makeText(this, "ยกเลิกตั้งเวลาปิดทีวี", android.widget.Toast.LENGTH_SHORT).show();
+        }
+        updateSettingsUI();
     }
 
     private void setTopBarStyle(boolean showText) {

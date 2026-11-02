@@ -117,10 +117,24 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         fresh.add(new Entry("Inputs", new ComponentName("com.gathin.tvhome.inputs", "InputsActivity"),
                 ctx.getDrawable(R.drawable.banner_inputs), ctx.getDrawable(R.drawable.ic_input)));
 
+        // Load custom user dynamic pins and hides
+        android.content.SharedPreferences prefs = ctx.getSharedPreferences("tvhome_prefs", Context.MODE_PRIVATE);
+        java.util.Set<String> customPins = prefs.getStringSet("custom_pinned_apps", null);
+        java.util.Set<String> customHidden = prefs.getStringSet("custom_hidden_apps", null);
+        List<String> activeFavourites = new ArrayList<>(favourites);
+        if (customPins != null && !customPins.isEmpty()) {
+            for (String p : customPins) {
+                if (!activeFavourites.contains(p)) activeFavourites.add(0, p);
+            }
+        }
+        if (customHidden != null) {
+            fresh.removeIf(e -> customHidden.contains(e.pkg));
+        }
+
         // Row 0: Dock Core Apps
         List<Entry> row0 = new ArrayList<>();
         List<Entry> otherApps = new ArrayList<>();
-        for (String fav : favourites) {
+        for (String fav : activeFavourites) {
             for (Entry e : fresh) {
                 if (fav.equals(e.pkg) && !row0.contains(e)) {
                     row0.add(e);
@@ -240,17 +254,54 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         });
         h.card.setOnLongClickListener(v -> {
             if (e.isStremio || "com.gathin.tvhome.inputs".equals(e.pkg)) return true;
-            Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + e.pkg));
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            try {
-                ctx.startActivity(i);
-            } catch (ActivityNotFoundException ignored) {
-            }
+            showAppMenu(e);
             return true;
         });
     }
 
+    private void showAppMenu(Entry e) {
+        android.content.SharedPreferences prefs = ctx.getSharedPreferences("tvhome_prefs", Context.MODE_PRIVATE);
+        java.util.Set<String> customPins = new java.util.HashSet<>(prefs.getStringSet("custom_pinned_apps", new java.util.HashSet<>()));
+        boolean isPinned = customPins.contains(e.pkg) || favourites.contains(e.pkg);
+
+        String pinText = isPinned ? "ถอดออกจากรายการโปรด (Unpin)" : "📌 ปักหมุดไปที่รายการโปรด (Pin to Favorites)";
+        String[] options = new String[] {
+            pinText,
+            "👁️ ซ่อนแอปนี้ (Hide App)",
+            "ℹ️ ข้อมูลแอป (App Details)"
+        };
+
+        new android.app.AlertDialog.Builder(ctx, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle(e.label)
+                .setItems(options, (dialog, which) -> {
+                    if (which == 0) {
+                        if (isPinned) {
+                            customPins.remove(e.pkg);
+                        } else {
+                            customPins.add(e.pkg);
+                        }
+                        prefs.edit().putStringSet("custom_pinned_apps", customPins).apply();
+                        reload();
+                    } else if (which == 1) {
+                        java.util.Set<String> customHidden = new java.util.HashSet<>(prefs.getStringSet("custom_hidden_apps", new java.util.HashSet<>()));
+                        customHidden.add(e.pkg);
+                        prefs.edit().putStringSet("custom_hidden_apps", customHidden).apply();
+                        reload();
+                        Toast.makeText(ctx, "ซ่อน " + e.label + " แล้ว", Toast.LENGTH_SHORT).show();
+                    } else if (which == 2) {
+                        Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + e.pkg));
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        try { ctx.startActivity(i); } catch (Exception ignored) {}
+                    }
+                })
+                .show();
+    }
+
     private void launch(Entry e) {
+        // Smart RAM Trim hint before launching heavy app
+        try {
+            System.gc();
+        } catch (Exception ignored) {}
         Intent i = new Intent(Intent.ACTION_MAIN)
                 .addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
                 .setComponent(e.component)
