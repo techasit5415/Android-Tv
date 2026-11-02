@@ -47,6 +47,8 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         boolean onTileVerticalKey(int position, int keyCode);
 
         void onInputsTileClicked();
+
+        void onAllAppsClicked();
     }
 
     static final class Entry {
@@ -91,10 +93,17 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
     private final List<Entry> items = new ArrayList<>();
     private static final java.util.Map<String, Bitmap> POSTER_CACHE = new java.util.HashMap<>();
 
+    private final boolean isAllAppsMode;
+
     AppAdapter(Context ctx, TileListener listener, int dockSize) {
+        this(ctx, listener, dockSize, false);
+    }
+
+    AppAdapter(Context ctx, TileListener listener, int dockSize, boolean isAllAppsMode) {
         this.ctx = ctx;
         this.listener = listener;
         this.dockSize = dockSize;
+        this.isAllAppsMode = isAllAppsMode;
         this.favourites = Arrays.asList(ctx.getResources().getStringArray(R.array.dock_apps));
         this.hidden = new HashSet<>(Arrays.asList(ctx.getResources().getStringArray(R.array.hidden_apps)));
     }
@@ -131,33 +140,41 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
             fresh.removeIf(e -> customHidden.contains(e.pkg));
         }
 
-        // Row 0: Dock Core Apps
-        List<Entry> row0 = new ArrayList<>();
-        List<Entry> otherApps = new ArrayList<>();
-        for (String fav : activeFavourites) {
+        if (!isAllAppsMode) {
+            // Home Dock: up to (dockSize - 1) favourites + 1 "All Apps" button
+            int targetFavCount = Math.max(1, dockSize - 1);
+            List<Entry> dockFavs = new ArrayList<>();
+            for (String fav : activeFavourites) {
+                for (Entry e : fresh) {
+                    if (fav.equals(e.pkg) && !dockFavs.contains(e)) {
+                        dockFavs.add(e);
+                        break;
+                    }
+                }
+                if (dockFavs.size() >= targetFavCount) break;
+            }
+            // Fill with other apps if needed until targetFavCount
             for (Entry e : fresh) {
-                if (fav.equals(e.pkg) && !row0.contains(e)) {
-                    row0.add(e);
-                    break;
+                if (dockFavs.size() >= targetFavCount) break;
+                if (!dockFavs.contains(e) && !"com.gathin.tvhome.inputs".equals(e.pkg)) {
+                    dockFavs.add(e);
                 }
             }
-        }
-        for (Entry e : fresh) {
-            if (!row0.contains(e)) otherApps.add(e);
-        }
-        Collections.sort(otherApps, (a, b) -> a.label.compareToIgnoreCase(b.label));
+            // Add the special "All Apps" entry as the 6th item
+            Drawable appsIcon = ctx.getDrawable(R.drawable.ic_apps);
+            Entry allAppsEntry = new Entry("แอปทั้งหมด",
+                    new ComponentName("com.gathin.tvhome.allapps", "AllAppsActivity"),
+                    null, appsIcon);
 
-        // Guarantee row0 has exactly COLUMNS items so rows stay aligned and Stremio shelf sits in row 1
-        while (row0.size() < MainActivity.COLUMNS && !otherApps.isEmpty()) {
-            row0.add(otherApps.remove(0));
+            items.clear();
+            items.addAll(dockFavs);
+            items.add(allAppsEntry);
+        } else {
+            // Full All Apps View: shows all installed leanback apps sorted alphabetically
+            Collections.sort(fresh, (a, b) -> a.label.compareToIgnoreCase(b.label));
+            items.clear();
+            items.addAll(fresh);
         }
-        while (row0.size() > MainActivity.COLUMNS) {
-            otherApps.add(0, row0.remove(row0.size() - 1));
-        }
-
-        items.clear();
-        items.addAll(row0);
-        items.addAll(otherApps);
         notifyDataSetChanged();
     }
 
@@ -216,21 +233,19 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
             h.banner.setVisibility(View.VISIBLE);
             h.icon.setVisibility(View.GONE);
             h.label.setVisibility(View.GONE);
-        } else if (e.banner != null) {
-            h.banner.setImageDrawable(e.banner);
-            h.banner.setVisibility(View.VISIBLE);
-            h.icon.setVisibility(View.GONE);
-            h.label.setVisibility(View.GONE);
         } else {
             h.banner.setImageDrawable(null);
             h.banner.setVisibility(View.GONE);
-            h.icon.setImageDrawable(e.icon);
+            h.icon.setImageDrawable(e.icon != null ? e.icon : e.banner);
             h.icon.setVisibility(View.VISIBLE);
             h.label.setText(e.label);
             h.label.setVisibility(View.VISIBLE);
+            h.label.setAlpha(focused ? 1.0f : 0.88f);
         }
         h.card.setOnClickListener(v -> {
-            if ("com.gathin.tvhome.inputs".equals(e.pkg)) {
+            if ("com.gathin.tvhome.allapps".equals(e.pkg)) {
+                if (listener != null) listener.onAllAppsClicked();
+            } else if ("com.gathin.tvhome.inputs".equals(e.pkg)) {
                 if (listener != null) listener.onInputsTileClicked();
             } else if (e.isStremio) {
                 Intent i = new Intent(Intent.ACTION_VIEW,
@@ -253,7 +268,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
             }
         });
         h.card.setOnLongClickListener(v -> {
-            if (e.isStremio || "com.gathin.tvhome.inputs".equals(e.pkg)) return true;
+            if (e.isStremio || "com.gathin.tvhome.inputs".equals(e.pkg) || "com.gathin.tvhome.allapps".equals(e.pkg)) return true;
             showAppMenu(e);
             return true;
         });

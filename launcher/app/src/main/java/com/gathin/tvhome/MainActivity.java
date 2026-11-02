@@ -94,6 +94,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private String peekDepthPref = "ultra";
     private boolean isTopBarShowText = true;
     private View settingsOverlay;
+    private View allAppsOverlay;
+    private RecyclerView gridAllApps;
+    private AppAdapter allAppsAdapter;
+    private TextView tvAppCountBadge;
     private TextView btnTopStyleText, btnTopStyleIcon;
     private TextView btnPeekUltra, btnPeekBalanced, btnPeekNone;
     private TextView btnWallAuto, btnWallDay, btnWallNight;
@@ -169,10 +173,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         adapter = new AppAdapter(this, this, COLUMNS);
         grid.setAdapter(adapter);
 
-        // tvOS layout: 2-row dock sits at the bottom, giving maximum space for the wallpaper above.
+        allAppsOverlay = findViewById(R.id.allAppsOverlay);
+        gridAllApps = findViewById(R.id.gridAllApps);
+        tvAppCountBadge = findViewById(R.id.tvAppCountBadge);
+        if (gridAllApps != null) {
+            gridAllApps.setLayoutManager(new GridLayoutManager(this, COLUMNS));
+            gridAllApps.setHasFixedSize(true);
+            allAppsAdapter = new AppAdapter(this, this, COLUMNS, true);
+            gridAllApps.setAdapter(allAppsAdapter);
+        }
+
+        // tvOS layout: 1-row dock sits at the bottom, giving maximum space for the wallpaper above.
         grid.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
             int h = b - t;
-            int want = Math.max(0, h - (int) ((225 + 24) * density));
+            int want = Math.max(0, h - (int) ((125 + 24) * density));
             if (grid.getPaddingTop() != want) {
                 grid.setPadding(grid.getPaddingLeft(), want, grid.getPaddingRight(), grid.getPaddingBottom());
             }
@@ -312,6 +326,51 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         showInputs();
     }
 
+    @Override
+    public void onAllAppsClicked() {
+        showAllApps();
+    }
+
+    private void showAllApps() {
+        if (allAppsOverlay == null) return;
+        View topBar = findViewById(R.id.topBar);
+        if (topBar != null) topBar.setVisibility(View.INVISIBLE);
+        if (allAppsAdapter != null) {
+            allAppsAdapter.reload();
+            if (tvAppCountBadge != null) {
+                tvAppCountBadge.setText(allAppsAdapter.getItemCount() + " แอป");
+            }
+        }
+        allAppsOverlay.setVisibility(View.VISIBLE);
+        allAppsOverlay.setAlpha(0f);
+        allAppsOverlay.animate().alpha(1f).setDuration(220).withEndAction(() -> {
+            if (gridAllApps != null && allAppsAdapter != null && allAppsAdapter.getItemCount() > 0) {
+                gridAllApps.scrollToPosition(0);
+                gridAllApps.post(() -> {
+                    RecyclerView.ViewHolder vh = gridAllApps.findViewHolderForAdapterPosition(0);
+                    if (vh != null) {
+                        View card = vh.itemView.findViewById(R.id.card);
+                        if (card != null) card.requestFocus();
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void hideAllApps() {
+        if (allAppsOverlay == null || allAppsOverlay.getVisibility() != View.VISIBLE) return;
+        allAppsOverlay.animate().alpha(0f).setDuration(180).withEndAction(() -> {
+            allAppsOverlay.setVisibility(View.GONE);
+            View topBar = findViewById(R.id.topBar);
+            if (topBar != null) topBar.setVisibility(View.VISIBLE);
+            // Focus back on the All Apps button in Home dock
+            if (adapter != null && adapter.getItemCount() > 0) {
+                int lastIdx = adapter.getItemCount() - 1;
+                focusTile(lastIdx);
+            }
+        }).start();
+    }
+
     private boolean isInitialLaunch = true;
 
     @Override
@@ -327,6 +386,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
         if (adapter != null) {
             adapter.reload();
+        }
+        if (allAppsAdapter != null) {
+            allAppsAdapter.reload();
         }
 
         updateGreeting();
@@ -442,6 +504,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     public void onBackPressed() {
+        if (allAppsOverlay != null && allAppsOverlay.getVisibility() == View.VISIBLE) {
+            hideAllApps();
+            return;
+        }
         if (settingsOverlay != null && settingsOverlay.getVisibility() == View.VISIBLE) {
             hideSettings();
             return;
@@ -787,22 +853,40 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     public boolean onTileVerticalKey(int position, int keyCode) {
+        if (allAppsOverlay != null && allAppsOverlay.getVisibility() == View.VISIBLE) {
+            if (gridAllApps != null && allAppsAdapter != null) {
+                int count = allAppsAdapter.getItemCount();
+                int target;
+                if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                    if (position < COLUMNS) return true; // top row of All Apps grid
+                    target = position - COLUMNS;
+                } else {
+                    int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;
+                    if (position >= lastRowStart) return true;
+                    target = Math.min(position + COLUMNS, count - 1);
+                }
+                RecyclerView.ViewHolder vh = gridAllApps.findViewHolderForAdapterPosition(target);
+                if (vh != null) {
+                    View card = vh.itemView.findViewById(R.id.card);
+                    if (card != null) card.requestFocus();
+                } else {
+                    gridAllApps.smoothScrollToPosition(target);
+                }
+                return true;
+            }
+            return true;
+        }
         if ((settingsOverlay != null && settingsOverlay.getVisibility() == View.VISIBLE) ||
             (calendarOverlay != null && calendarOverlay.getVisibility() == View.VISIBLE)) {
             return true;
         }
-        int count = adapter.getItemCount();
-        int target;
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
             if (position < COLUMNS) return false;          // dock row: let focus move to the top bar
-            target = position - COLUMNS;
+            return false;
         } else {
-            int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;
-            if (position >= lastRowStart) return true;     // already on the last row: stay put
-            target = Math.min(position + COLUMNS, count - 1);
+            // Pure 1-row Home screen: Down key does nothing, keeps home clean and peaceful!
+            return true;
         }
-        focusTile(target);
-        return true;
     }
 
     private void focusTile(int position) {
@@ -1005,13 +1089,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     // ---- Settings & Top Bar Preferences ----------------------------------------------------------
 
     private void updatePeekOffset() {
-        if ("none".equals(peekDepthPref)) {
-            peekOffset = 0f;
-        } else if ("balanced".equals(peekDepthPref)) {
-            peekOffset = 140f * density;
-        } else {
-            peekOffset = 220f * density; // default: ultra low peek (wallpaper takes ~95% of screen)
-        }
+        peekOffset = 0f;
     }
 
     private void applyTopBarStyle(boolean showText) {
