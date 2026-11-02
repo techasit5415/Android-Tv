@@ -198,15 +198,8 @@ public class MediaNotificationListener extends NotificationListenerService {
                     }
                 }
             }
-            // 3. Fallback to Spotify even if paused
-            if (chosen == null) {
-                for (MediaController mc : controllers) {
-                    if ("com.spotify.tv.android".equals(mc.getPackageName())) {
-                        chosen = mc;
-                        break;
-                    }
-                }
-            }
+            // 3. Only keep active controller if it is actually playing
+            // (Do not fall back to paused Spotify)
 
             if (activeController != chosen) {
                 if (activeController != null) {
@@ -265,7 +258,13 @@ public class MediaNotificationListener extends NotificationListenerService {
                         CharSequence title = sbn.getNotification().extras.getCharSequence(android.app.Notification.EXTRA_TITLE);
                         CharSequence text = sbn.getNotification().extras.getCharSequence(android.app.Notification.EXTRA_TEXT);
                         Log.d(TAG, "Found Spotify notification: " + title + " - " + text);
-                        if (title != null) {
+                        // Check if playback state in notification is actually active
+                        // Do not assume playing == true if Spotify just left an idle background notification
+                        boolean isActuallyPlaying = false;
+                        if (activeController != null && activeController.getPlaybackState() != null) {
+                            isActuallyPlaying = activeController.getPlaybackState().getState() == PlaybackState.STATE_PLAYING;
+                        }
+                        if (title != null && isActuallyPlaying) {
                             dispatchUpdate(title.toString(), text != null ? text.toString() : null, true, sbn.getPackageName());
                             return;
                         }
