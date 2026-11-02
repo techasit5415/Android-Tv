@@ -198,8 +198,15 @@ public class MediaNotificationListener extends NotificationListenerService {
                     }
                 }
             }
-            // 3. Only keep active controller if it is actually playing
-            // (Do not fall back to paused Spotify)
+            // 3. Keep observing Spotify controller even if paused, so callbacks fire when it starts playing
+            if (chosen == null) {
+                for (MediaController mc : controllers) {
+                    if ("com.spotify.tv.android".equals(mc.getPackageName())) {
+                        chosen = mc;
+                        break;
+                    }
+                }
+            }
 
             if (activeController != chosen) {
                 if (activeController != null) {
@@ -260,11 +267,12 @@ public class MediaNotificationListener extends NotificationListenerService {
                         Log.d(TAG, "Found Spotify notification: " + title + " - " + text);
                         // Check if playback state in notification is actually active
                         // Do not assume playing == true if Spotify just left an idle background notification
-                        boolean isActuallyPlaying = false;
-                        if (activeController != null && activeController.getPlaybackState() != null) {
-                            isActuallyPlaying = activeController.getPlaybackState().getState() == PlaybackState.STATE_PLAYING;
+                        // Check that active controller belongs to Spotify AND is actually playing
+                        boolean isSpotifyActuallyPlaying = false;
+                        if (activeController != null && "com.spotify.tv.android".equals(activeController.getPackageName()) && activeController.getPlaybackState() != null) {
+                            isSpotifyActuallyPlaying = activeController.getPlaybackState().getState() == PlaybackState.STATE_PLAYING;
                         }
-                        if (title != null && isActuallyPlaying) {
+                        if (title != null && isSpotifyActuallyPlaying) {
                             dispatchUpdate(title.toString(), text != null ? text.toString() : null, true, sbn.getPackageName());
                             return;
                         }
