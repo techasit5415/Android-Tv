@@ -17,6 +17,7 @@ My TV model is: <MODEL NAME HERE>. Work on the real device, step by step, and ve
 do with screenshots pulled from the TV. Ask me before anything that depends on my preferences.
 
 Connect
+
 - Find the TV on my network (hostname, ARP table, or ask me for the IP) and connect over ADB on port 5555.
 - If the stock adb binary fails with "No route to host" on macOS even though the port is open, that is
   macOS Local Network privacy blocking adb. Don't debug it: use the Python `adb-shell` package in a venv
@@ -25,10 +26,12 @@ Connect
 - Tell me when the "Allow USB debugging?" prompt will appear on the TV so I can accept it.
 
 Back up first
+
 - Save the full package list, disabled-package list, getprop output and all settings to a backup folder
   before changing anything, and write a restore script that re-enables everything you disable.
 
 Debloat
+
 - List installed packages and sort them into: manufacturer telemetry/analytics, manufacturer content
   and ad services (PatchWall, recommendation rows, content providers), background services I probably
   don't need (share/cast duplicates, cleaners), preloaded apps, and streaming apps.
@@ -43,6 +46,7 @@ Debloat
 - Run `pm` commands one per shell call, chained commands may silently stop after the first.
 
 Launcher
+
 - Don't install a third-party launcher that charges for basics like wallpapers. Build a small native
   Android TV launcher instead (Java, AndroidX RecyclerView, minSdk matching the TV, debug build is fine),
   install it over ADB, set it as the default home and disable the stock launcher. If several apps claim
@@ -61,6 +65,7 @@ Launcher
 - Keep it light: the TV has about 1 GB of RAM. No blur, no video, no network polling.
 
 Verify
+
 - After each change, inject remote key presses over ADB, take a screenshot from the TV and look at it.
   Fix what you see before moving on.
 - When done, give me a restore script, a build-and-install script, and a README that explains how to

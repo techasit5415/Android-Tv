@@ -19,7 +19,7 @@ Every brand ships different bloat. If you ran the prompt (or did it by hand) on 
 5. If your TV's Live TV app or stock launcher has a different package name, say so in the header;
    `tools/restore.sh` and `launcher/build-and-install.sh` accept them as arguments.
 
-Never list packages to *uninstall*. Everything in this repo disables with `pm disable-user`, which
+Never list packages to _uninstall_. Everything in this repo disables with `pm disable-user`, which
 is reversible from the TV's own settings if the tools are gone.
 
 ## 2. Improve the launcher
