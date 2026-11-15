@@ -164,14 +164,24 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         updateRamUsage();
 
         grid = findViewById(R.id.grid);
-        grid.setLayoutManager(new GridLayoutManager(this, COLUMNS));
+        adapter = new AppAdapter(this, this, COLUMNS);
+        int initialDockCount = Math.max(1, adapter.getItemCount());
+        grid.setLayoutManager(new GridLayoutManager(this, initialDockCount));
         grid.setHasFixedSize(true);
         grid.setItemAnimator(null);
         grid.addItemDecoration(new DockDecoration(COLUMNS, density));
         grid.setLayoutAnimation(new LayoutAnimationController(
                 AnimationUtils.loadAnimation(this, R.anim.tile_enter), 0.06f));
-        adapter = new AppAdapter(this, this, COLUMNS);
         grid.setAdapter(adapter);
+
+        adapter.registerAdapterDataObserver(new RecyclerView.AdapterDataObserver() {
+            @Override
+            public void onChanged() {
+                if (grid != null && grid.getLayoutManager() instanceof GridLayoutManager) {
+                    ((GridLayoutManager) grid.getLayoutManager()).setSpanCount(Math.max(1, adapter.getItemCount()));
+                }
+            }
+        });
 
         allAppsOverlay = findViewById(R.id.allAppsOverlay);
         gridAllApps = findViewById(R.id.gridAllApps);
@@ -323,6 +333,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         showAllApps();
     }
 
+    @Override
+    public void onAppListChanged() {
+        if (adapter != null) {
+            adapter.reload();
+            if (grid != null && grid.getLayoutManager() instanceof GridLayoutManager) {
+                ((GridLayoutManager) grid.getLayoutManager()).setSpanCount(Math.max(1, adapter.getItemCount()));
+            }
+        }
+        if (allAppsAdapter != null) {
+            allAppsAdapter.reload();
+            if (tvAppCountBadge != null) {
+                tvAppCountBadge.setText(allAppsAdapter.getItemCount() + " แอป");
+            }
+        }
+    }
+
     private void showAllApps() {
         if (allAppsOverlay == null) return;
         View topBar = findViewById(R.id.topBar);
@@ -355,10 +381,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             allAppsOverlay.setVisibility(View.GONE);
             View topBar = findViewById(R.id.topBar);
             if (topBar != null) topBar.setVisibility(View.VISIBLE);
-            // Focus back on the All Apps button in Home dock
             if (adapter != null && adapter.getItemCount() > 0) {
-                int lastIdx = adapter.getItemCount() - 1;
-                focusTile(lastIdx);
+                int target = (lastFocused >= 0 && lastFocused < adapter.getItemCount()) ? lastFocused : 0;
+                focusTile(target);
             }
         }).start();
     }
@@ -855,7 +880,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 int count = allAppsAdapter.getItemCount();
                 int target;
                 if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-                    if (position < COLUMNS) return true; // top row of All Apps grid
+                    if (position < COLUMNS) {
+                        hideAllApps();
+                        return true;
+                    }
                     target = position - COLUMNS;
                 } else {
                     int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;
@@ -878,10 +906,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             return true;
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-            if (position < COLUMNS) return false;          // dock row: let focus move to the top bar
-            return false;
+            return false;          // dock row: let focus move to the top bar
+        } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+            showAllApps();
+            return true;
         } else {
-            // Pure 1-row Home screen: Down key does nothing, keeps home clean and peaceful!
             return true;
         }
     }

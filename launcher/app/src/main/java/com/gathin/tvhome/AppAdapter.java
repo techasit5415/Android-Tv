@@ -51,6 +51,8 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         void onInputsTileClicked();
 
         void onAllAppsClicked();
+
+        void onAppListChanged();
     }
 
     static final class Entry {
@@ -128,14 +130,23 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         fresh.add(new Entry("Inputs", new ComponentName("com.gathin.tvhome.inputs", "InputsActivity"),
                 ctx.getDrawable(R.drawable.banner_inputs), ctx.getDrawable(R.drawable.ic_input)));
 
-        // Load custom user dynamic pins and hides
+        // Load custom user dynamic pins, unpins, and hides
         android.content.SharedPreferences prefs = ctx.getSharedPreferences("tvhome_prefs", Context.MODE_PRIVATE);
         java.util.Set<String> customPins = prefs.getStringSet("custom_pinned_apps", null);
+        java.util.Set<String> customUnpinned = prefs.getStringSet("custom_unpinned_apps", null);
         java.util.Set<String> customHidden = prefs.getStringSet("custom_hidden_apps", null);
-        List<String> activeFavourites = new ArrayList<>(favourites);
+
+        List<String> activeFavourites = new ArrayList<>();
+        for (String fav : favourites) {
+            if (customUnpinned == null || !customUnpinned.contains(fav)) {
+                activeFavourites.add(fav);
+            }
+        }
         if (customPins != null && !customPins.isEmpty()) {
             for (String p : customPins) {
-                if (!activeFavourites.contains(p)) activeFavourites.add(0, p);
+                if (!activeFavourites.contains(p) && (customUnpinned == null || !customUnpinned.contains(p))) {
+                    activeFavourites.add(p);
+                }
             }
         }
         if (customHidden != null) {
@@ -143,8 +154,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         }
 
         if (!isAllAppsMode) {
-            // Home Dock: up to (dockSize - 1) favourites + 1 "All Apps" button
-            int targetFavCount = Math.max(1, dockSize - 1);
+            // Home Dock: ONLY favorite apps (NO "+" button)
             List<Entry> dockFavs = new ArrayList<>();
             for (String fav : activeFavourites) {
                 for (Entry e : fresh) {
@@ -153,24 +163,10 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
                         break;
                     }
                 }
-                if (dockFavs.size() >= targetFavCount) break;
             }
-            // Fill with other apps if needed until targetFavCount
-            for (Entry e : fresh) {
-                if (dockFavs.size() >= targetFavCount) break;
-                if (!dockFavs.contains(e) && !"com.gathin.tvhome.inputs".equals(e.pkg)) {
-                    dockFavs.add(e);
-                }
-            }
-            // Add the special "All Apps" entry as the 6th item
-            Drawable appsIcon = ctx.getDrawable(R.drawable.ic_apps);
-            Entry allAppsEntry = new Entry("แอปทั้งหมด",
-                    new ComponentName("com.gathin.tvhome.allapps", "AllAppsActivity"),
-                    null, appsIcon);
 
             items.clear();
             items.addAll(dockFavs);
-            items.add(allAppsEntry);
         } else {
             // Full All Apps View: shows all installed leanback apps sorted alphabetically
             Collections.sort(fresh, (a, b) -> a.label.compareToIgnoreCase(b.label));
@@ -321,15 +317,26 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
     }
 
     private void showAppMenu(Entry e) {
+        if (e.isStremio || "com.gathin.tvhome.inputs".equals(e.pkg)) return;
+
         android.content.SharedPreferences prefs = ctx.getSharedPreferences("tvhome_prefs", Context.MODE_PRIVATE);
         java.util.Set<String> customPins = new java.util.HashSet<>(prefs.getStringSet("custom_pinned_apps", new java.util.HashSet<>()));
-        boolean isPinned = customPins.contains(e.pkg) || favourites.contains(e.pkg);
+        java.util.Set<String> customUnpinned = new java.util.HashSet<>(prefs.getStringSet("custom_unpinned_apps", new java.util.HashSet<>()));
 
-        String pinText = isPinned ? "ถอดออกจากรายการโปรด (Unpin)" : "📌 ปักหมุดไปที่รายการโปรด (Pin to Favorites)";
+        boolean isPinned;
+        if (customUnpinned.contains(e.pkg)) {
+            isPinned = false;
+        } else if (customPins.contains(e.pkg)) {
+            isPinned = true;
+        } else {
+            isPinned = favourites.contains(e.pkg);
+        }
+
+        String pinActionText = isPinned ? "ลบออกจากหน้าหลัก" : "เพิ่มไปยังหน้าหลัก";
         String[] options = new String[] {
-            pinText,
-            "👁️ ซ่อนแอปนี้ (Hide App)",
-            "ℹ️ ข้อมูลแอป (App Details)"
+            pinActionText,
+            "ซ่อนแอปนี้",
+            "ข้อมูลแอป"
         };
 
         new android.app.AlertDialog.Builder(ctx, android.R.style.Theme_DeviceDefault_Dialog_Alert)
@@ -337,17 +344,32 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) {
                         if (isPinned) {
+                            customUnpinned.add(e.pkg);
                             customPins.remove(e.pkg);
+                            Toast.makeText(ctx, "ลบ " + e.label + " ออกจากหน้าหลักแล้ว", Toast.LENGTH_SHORT).show();
                         } else {
                             customPins.add(e.pkg);
+                            customUnpinned.remove(e.pkg);
+                            Toast.makeText(ctx, "เพิ่ม " + e.label + " ไปยังหน้าหลักแล้ว", Toast.LENGTH_SHORT).show();
                         }
-                        prefs.edit().putStringSet("custom_pinned_apps", customPins).apply();
-                        reload();
+                        prefs.edit()
+                                .putStringSet("custom_pinned_apps", customPins)
+                                .putStringSet("custom_unpinned_apps", customUnpinned)
+                                .apply();
+                        if (listener != null) {
+                            listener.onAppListChanged();
+                        } else {
+                            reload();
+                        }
                     } else if (which == 1) {
                         java.util.Set<String> customHidden = new java.util.HashSet<>(prefs.getStringSet("custom_hidden_apps", new java.util.HashSet<>()));
                         customHidden.add(e.pkg);
                         prefs.edit().putStringSet("custom_hidden_apps", customHidden).apply();
-                        reload();
+                        if (listener != null) {
+                            listener.onAppListChanged();
+                        } else {
+                            reload();
+                        }
                         Toast.makeText(ctx, "ซ่อน " + e.label + " แล้ว", Toast.LENGTH_SHORT).show();
                     } else if (which == 2) {
                         Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + e.pkg));
@@ -460,6 +482,23 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
             card.setClipToOutline(true);
 
             card.setOnKeyListener((view, keyCode, event) -> {
+                if (keyCode == KeyEvent.KEYCODE_MENU && event.getAction() == KeyEvent.ACTION_DOWN) {
+                    view.performLongClick();
+                    return true;
+                }
+                if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+                    if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                        if (event.isLongPress() || event.getRepeatCount() == 1) {
+                            view.performLongClick();
+                            return true;
+                        }
+                        if (event.getRepeatCount() > 1) {
+                            return true;
+                        }
+                        event.startTracking();
+                    }
+                    return false;
+                }
                 if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
                 if (keyCode != KeyEvent.KEYCODE_DPAD_UP && keyCode != KeyEvent.KEYCODE_DPAD_DOWN) return false;
                 int pos = getBindingAdapterPosition();
