@@ -218,11 +218,11 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
     }
 
     public static int getBrandColor(String pkg) {
-        if ("com.google.android.youtube.tv".equals(pkg)) return 0xFFFF0000;
-        if ("com.netflix.ninja".equals(pkg)) return 0xFFE50914;
-        if ("com.ais.mimo.aisplay.tv".equals(pkg)) return 0xFF43A047;
-        if ("com.spotify.tv.android".equals(pkg)) return 0xFF1DB954;
-        if (pkg != null && (pkg.contains("smarttube") || pkg.contains("teamsmart"))) return 0xFFE53935;
+        if ("com.google.android.youtube.tv".equals(pkg)) return 0xFF1C202B;
+        if ("com.netflix.ninja".equals(pkg)) return 0xFF141414;
+        if ("com.ais.mimo.aisplay.tv".equals(pkg)) return 0xFF000000;
+        if ("com.spotify.tv.android".equals(pkg)) return 0xFF121212;
+        if (pkg != null && (pkg.contains("smarttube") || pkg.contains("teamsmart"))) return 0xFF1C202B;
         if ("com.gathin.tvhome.allapps".equals(pkg)) return 0x2A405070;
         return 0x3320283A;
     }
@@ -266,44 +266,28 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         h.card.setBackground(createSquircle(brandColor, focused, density));
         h.card.setClipToOutline(true);
 
-        String monogram = null;
         Drawable brandIcon = null;
 
         if ("com.google.android.youtube.tv".equals(e.pkg)) {
             brandIcon = ctx.getDrawable(R.drawable.ic_youtube);
         } else if ("com.netflix.ninja".equals(e.pkg)) {
-            monogram = "N";
+            brandIcon = ctx.getDrawable(R.drawable.logo_netflix);
         } else if ("com.ais.mimo.aisplay.tv".equals(e.pkg)) {
-            monogram = "AIS";
+            brandIcon = ctx.getDrawable(R.drawable.logo_aisplay);
         } else if ("com.spotify.tv.android".equals(e.pkg)) {
-            brandIcon = ctx.getDrawable(R.drawable.ic_spotify);
+            brandIcon = ctx.getDrawable(R.drawable.logo_spotify);
         } else if (e.pkg != null && (e.pkg.contains("smarttube") || e.pkg.contains("teamsmart"))) {
-            monogram = "S";
+            brandIcon = ctx.getDrawable(R.drawable.logo_smarttube);
         } else if ("com.gathin.tvhome.allapps".equals(e.pkg)) {
             brandIcon = ctx.getDrawable(R.drawable.ic_add);
         } else {
             brandIcon = e.icon != null ? e.icon : e.banner;
         }
 
-        if (monogram != null) {
-            h.icon.setVisibility(View.GONE);
-            h.banner.setVisibility(View.GONE);
-            h.label.setText(monogram);
-            h.label.setTextSize(TypedValue.COMPLEX_UNIT_SP, monogram.length() > 2 ? 22 : 36);
-            h.label.setTextColor(0xFFFFFFFF);
-            h.label.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-            h.label.setVisibility(View.VISIBLE);
-        } else if (brandIcon != null) {
-            h.banner.setVisibility(View.GONE);
-            h.label.setVisibility(View.GONE);
-            h.icon.setImageDrawable(brandIcon);
-            h.icon.setVisibility(View.VISIBLE);
-        } else {
-            h.banner.setVisibility(View.GONE);
-            h.label.setVisibility(View.GONE);
-            h.icon.setImageDrawable(e.icon != null ? e.icon : e.banner);
-            h.icon.setVisibility(View.VISIBLE);
-        }
+        h.banner.setVisibility(View.GONE);
+        h.label.setVisibility(View.GONE);
+        h.icon.setImageDrawable(brandIcon != null ? brandIcon : (e.icon != null ? e.icon : e.banner));
+        h.icon.setVisibility(View.VISIBLE);
         h.card.setOnClickListener(v -> {
             if ("com.gathin.tvhome.allapps".equals(e.pkg)) {
                 if (listener != null) listener.onAllAppsClicked();
