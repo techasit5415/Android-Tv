@@ -59,12 +59,14 @@ public class MediaNotificationListener extends NotificationListenerService {
             Log.d(TAG, "Broadcast received: " + action);
             if ("com.spotify.music.playbackstatechanged".equals(action)
                     || "com.spotify.music.metadatachanged".equals(action)) {
-                boolean playing = intent.getBooleanExtra("playing", false);
+                android.media.AudioManager am = (android.media.AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                boolean musicActive = am != null && am.isMusicActive();
+                boolean playing = musicActive && intent.getBooleanExtra("playing", false);
                 String track = intent.getStringExtra("track");
                 String artist = intent.getStringExtra("artist");
                 Log.d(TAG, "Spotify broadcast: track=" + track + ", playing=" + playing);
-                if (track != null) {
-                    dispatchUpdate(track, artist, playing, "com.spotify.tv.android");
+                if (track != null && playing) {
+                    dispatchUpdate(track, artist, true, "com.spotify.tv.android");
                 } else {
                     evaluateMediaState();
                 }
@@ -226,10 +228,13 @@ public class MediaNotificationListener extends NotificationListenerService {
     }
 
     public void evaluateMediaState() {
+        android.media.AudioManager am = (android.media.AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        boolean musicActive = am != null && am.isMusicActive();
+
         if (activeController != null) {
             PlaybackState ps = activeController.getPlaybackState();
             MediaMetadata mm = activeController.getMetadata();
-            boolean isPlaying = ps != null && ps.getState() == PlaybackState.STATE_PLAYING;
+            boolean isPlaying = musicActive && ps != null && ps.getState() == PlaybackState.STATE_PLAYING;
             String track = null;
             String artist = null;
 
@@ -250,38 +255,13 @@ public class MediaNotificationListener extends NotificationListenerService {
             }
 
             Log.d(TAG, "evaluateMediaState: track=" + track + ", artist=" + artist + ", isPlaying=" + isPlaying + ", pkg=" + activeController.getPackageName());
-            if (track != null) {
-                dispatchUpdate(track, artist, isPlaying, activeController.getPackageName());
+            if (track != null && isPlaying) {
+                dispatchUpdate(track, artist, true, activeController.getPackageName());
                 return;
             }
         }
 
-        // Check active notifications
-        try {
-            StatusBarNotification[] notifs = getActiveNotifications();
-            if (notifs != null) {
-                for (StatusBarNotification sbn : notifs) {
-                    if ("com.spotify.tv.android".equals(sbn.getPackageName())) {
-                        CharSequence title = sbn.getNotification().extras.getCharSequence(android.app.Notification.EXTRA_TITLE);
-                        CharSequence text = sbn.getNotification().extras.getCharSequence(android.app.Notification.EXTRA_TEXT);
-                        Log.d(TAG, "Found Spotify notification: " + title + " - " + text);
-                        // Check if playback state in notification is actually active
-                        // Do not assume playing == true if Spotify just left an idle background notification
-                        // Check that active controller belongs to Spotify AND is actually playing
-                        boolean isSpotifyActuallyPlaying = false;
-                        if (activeController != null && "com.spotify.tv.android".equals(activeController.getPackageName()) && activeController.getPlaybackState() != null) {
-                            isSpotifyActuallyPlaying = activeController.getPlaybackState().getState() == PlaybackState.STATE_PLAYING;
-                        }
-                        if (title != null && isSpotifyActuallyPlaying) {
-                            dispatchUpdate(title.toString(), text != null ? text.toString() : null, true, sbn.getPackageName());
-                            return;
-                        }
-                    }
-                }
-            }
-        } catch (Exception ignored) {}
-
-        Log.d(TAG, "evaluateMediaState: nothing active");
+        Log.d(TAG, "evaluateMediaState: nothing playing");
         dispatchUpdate(null, null, false, null);
     }
 

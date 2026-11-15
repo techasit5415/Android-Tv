@@ -380,6 +380,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         glass.setAlpha(0f);
         heroShown = false;
         heroName.setAlpha(0f);
+        android.media.AudioManager audioMgr = (android.media.AudioManager) getSystemService(AUDIO_SERVICE);
+        if (audioMgr != null && !audioMgr.isMusicActive()) {
+            if (btnNowPlaying != null) btnNowPlaying.setVisibility(View.GONE);
+            currentPlayingTrack = null;
+        }
         MediaNotificationListener.setCallback(this::onMediaUpdated);
         MediaNotificationListener.requestUpdate();
         ambient.setAlpha(0f);
@@ -1235,7 +1240,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (btnNowPlaying == null) btnNowPlaying = findViewById(R.id.btnNowPlaying);
             if (btnNowPlaying == null) return;
 
-            if (isPlaying && track != null && !track.trim().isEmpty()) {
+            android.media.AudioManager am = (android.media.AudioManager) getSystemService(AUDIO_SERVICE);
+            boolean actualAudioPlaying = am != null && am.isMusicActive();
+
+            if (isPlaying && actualAudioPlaying && track != null && !track.trim().isEmpty()) {
                 String label = track;
                 if (artist != null && !artist.trim().isEmpty()) {
                     label = track + " • " + artist;
