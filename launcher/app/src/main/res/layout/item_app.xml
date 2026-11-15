@@ -1,17 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:gravity="center_horizontal"
     android:paddingTop="4dp"
     android:paddingBottom="4dp"
     android:clipChildren="false"
     android:clipToPadding="false">
 
+    <!-- Squircle Card: Rounded square profile style (106dp x 106dp) -->
     <FrameLayout
         android:id="@+id/card"
-        android:layout_width="112dp"
-        android:layout_height="112dp"
-        android:layout_gravity="center_horizontal|top"
+        android:layout_width="106dp"
+        android:layout_height="106dp"
+        android:layout_gravity="center_horizontal"
         android:background="@drawable/tile_bg"
         android:focusable="true"
         android:clickable="true">
@@ -26,10 +29,9 @@
 
         <ImageView
             android:id="@+id/icon"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
-            android:layout_gravity="center_horizontal|top"
-            android:layout_marginTop="14dp"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_gravity="center"
             android:scaleType="fitCenter"
             android:contentDescription="@null" />
 
@@ -37,34 +39,31 @@
             android:id="@+id/label"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_gravity="bottom|center_horizontal"
-            android:paddingStart="4dp"
-            android:paddingEnd="4dp"
-            android:paddingBottom="10dp"
+            android:layout_gravity="center"
             android:gravity="center"
-            android:singleLine="true"
-            android:ellipsize="end"
+            android:visibility="gone"
             android:textColor="#FFFFFFFF"
-            android:textSize="13sp"
+            android:textSize="32sp"
             android:fontFamily="@font/outfit"
-            android:fontVariationSettings="'wght' 600"
-            android:shadowColor="#E6000000"
-            android:shadowRadius="10"
-            android:shadowDy="2" />
+            android:fontVariationSettings="'wght' 700" />
     </FrameLayout>
 
-    <!-- Legacy name container maintained for compatibility -->
+    <!-- App Name directly below the squircle card (Netflix Profile style) -->
     <TextView
         android:id="@+id/name"
-        android:layout_width="112dp"
+        android:layout_width="wrap_content"
+        android:maxWidth="116dp"
         android:layout_height="wrap_content"
-        android:layout_gravity="center_horizontal|top"
-        android:layout_marginTop="116dp"
+        android:layout_marginTop="8dp"
         android:gravity="center"
         android:singleLine="true"
         android:ellipsize="end"
-        android:visibility="gone"
-        android:textColor="#FFFFFFFF"
+        android:textColor="#F2FFFFFF"
         android:textSize="13sp"
-        android:fontFamily="@font/outfit" />
-</FrameLayout>
+        android:fontFamily="@font/outfit"
+        android:fontVariationSettings="'wght' 500"
+        android:letterSpacing="0.01"
+        android:shadowColor="#CC000000"
+        android:shadowRadius="6"
+        android:shadowDy="2" />
+</LinearLayout>

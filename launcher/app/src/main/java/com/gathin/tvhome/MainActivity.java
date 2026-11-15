@@ -183,14 +183,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             gridAllApps.setAdapter(allAppsAdapter);
         }
 
-        // tvOS layout: 1-row dock sits at the bottom, giving maximum space for the wallpaper above.
-        grid.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
-            int h = b - t;
-            int want = Math.max(0, h - (int) ((125 + 24) * density));
-            if (grid.getPaddingTop() != want) {
-                grid.setPadding(grid.getPaddingLeft(), want, grid.getPaddingRight(), grid.getPaddingBottom());
-            }
-        });
 
         // Keep the glass glued to its tile while the grid scrolls.
         grid.addOnScrollListener(new RecyclerView.OnScrollListener() {

@@ -11,9 +11,11 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Outline;
 import android.graphics.Rect;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.provider.Settings;
+import android.util.TypedValue;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -215,32 +217,92 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         return new Holder(v, listener);
     }
 
+    public static int getBrandColor(String pkg) {
+        if ("com.google.android.youtube.tv".equals(pkg)) return 0xFFFF0000;
+        if ("com.netflix.ninja".equals(pkg)) return 0xFFE50914;
+        if ("com.ais.mimo.aisplay.tv".equals(pkg)) return 0xFF43A047;
+        if ("com.spotify.tv.android".equals(pkg)) return 0xFF1DB954;
+        if (pkg != null && (pkg.contains("smarttube") || pkg.contains("teamsmart"))) return 0xFFE53935;
+        if ("com.gathin.tvhome.allapps".equals(pkg)) return 0x2A405070;
+        return 0x3320283A;
+    }
+
+    public static Drawable createSquircle(int color, boolean focused, float density) {
+        android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+        gd.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        gd.setCornerRadius(24f * density);
+        gd.setColor(color);
+        if (focused) {
+            gd.setStroke((int) (3.5f * density), 0xFFFFFFFF);
+        } else {
+            gd.setStroke((int) (1f * density), 0x33FFFFFF);
+        }
+        return gd;
+    }
+
     @Override
     public void onBindViewHolder(@NonNull Holder h, int position) {
         Entry e = items.get(position);
-        h.name.setText(e.label);
         boolean focused = h.card.isFocused();
         float density = h.itemView.getResources().getDisplayMetrics().density;
+
+        String displayLabel = e.label;
+        if ("com.gathin.tvhome.allapps".equals(e.pkg)) {
+            displayLabel = "เพิ่มแอพ";
+        } else if (e.pkg != null && (e.pkg.contains("smarttube") || e.pkg.contains("teamsmart"))) {
+            displayLabel = "SmartTube";
+        }
+        h.name.setText(displayLabel);
         h.name.setVisibility(View.VISIBLE);
-        h.name.setAlpha(focused ? 1.0f : 0.0f);
-        h.name.setTranslationY(focused ? 0f : -density * 4f);
-        h.name.setScaleX(focused ? 1.04f : 1.0f);
-        h.name.setScaleY(focused ? 1.04f : 1.0f);
+        h.name.setAlpha(focused ? 1.0f : 0.85f);
+        h.name.setTranslationY(0f);
+        h.name.setScaleX(focused ? 1.05f : 1.0f);
+        h.name.setScaleY(focused ? 1.05f : 1.0f);
         h.card.setScaleX(focused ? FOCUS_SCALE : 1f);
         h.card.setScaleY(focused ? FOCUS_SCALE : 1f);
-        if (e.posterBitmap != null) {
-            h.banner.setImageBitmap(e.posterBitmap);
-            h.banner.setVisibility(View.VISIBLE);
-            h.icon.setVisibility(View.GONE);
-            h.label.setVisibility(View.GONE);
+
+        int brandColor = getBrandColor(e.pkg);
+        h.card.setTag(brandColor);
+        h.card.setBackground(createSquircle(brandColor, focused, density));
+        h.card.setClipToOutline(true);
+
+        String monogram = null;
+        Drawable brandIcon = null;
+
+        if ("com.google.android.youtube.tv".equals(e.pkg)) {
+            brandIcon = ctx.getDrawable(R.drawable.ic_youtube);
+        } else if ("com.netflix.ninja".equals(e.pkg)) {
+            monogram = "N";
+        } else if ("com.ais.mimo.aisplay.tv".equals(e.pkg)) {
+            monogram = "AIS";
+        } else if ("com.spotify.tv.android".equals(e.pkg)) {
+            brandIcon = ctx.getDrawable(R.drawable.ic_spotify);
+        } else if (e.pkg != null && (e.pkg.contains("smarttube") || e.pkg.contains("teamsmart"))) {
+            monogram = "S";
+        } else if ("com.gathin.tvhome.allapps".equals(e.pkg)) {
+            brandIcon = ctx.getDrawable(R.drawable.ic_add);
         } else {
-            h.banner.setImageDrawable(null);
+            brandIcon = e.icon != null ? e.icon : e.banner;
+        }
+
+        if (monogram != null) {
+            h.icon.setVisibility(View.GONE);
             h.banner.setVisibility(View.GONE);
+            h.label.setText(monogram);
+            h.label.setTextSize(TypedValue.COMPLEX_UNIT_SP, monogram.length() > 2 ? 22 : 36);
+            h.label.setTextColor(0xFFFFFFFF);
+            h.label.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+            h.label.setVisibility(View.VISIBLE);
+        } else if (brandIcon != null) {
+            h.banner.setVisibility(View.GONE);
+            h.label.setVisibility(View.GONE);
+            h.icon.setImageDrawable(brandIcon);
+            h.icon.setVisibility(View.VISIBLE);
+        } else {
+            h.banner.setVisibility(View.GONE);
+            h.label.setVisibility(View.GONE);
             h.icon.setImageDrawable(e.icon != null ? e.icon : e.banner);
             h.icon.setVisibility(View.VISIBLE);
-            h.label.setText(e.label);
-            h.label.setVisibility(View.VISIBLE);
-            h.label.setAlpha(focused ? 1.0f : 0.88f);
         }
         h.card.setOnClickListener(v -> {
             if ("com.gathin.tvhome.allapps".equals(e.pkg)) {
@@ -423,15 +485,18 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
             card.setOnFocusChangeListener((view, focused) -> {
                 float s = focused ? FOCUS_SCALE : 1.0f;
                 view.animate().scaleX(s).scaleY(s)
-                        .setDuration(focused ? 260 : 180)
-                        .setInterpolator(new OvershootInterpolator(focused ? 1.6f : 0f))
+                        .setDuration(focused ? 240 : 180)
+                        .setInterpolator(new OvershootInterpolator(focused ? 1.4f : 0f))
                         .start();
                 name.animate()
-                        .alpha(focused ? 1.0f : 0.0f)
-                        .translationY(focused ? 0f : -density * 4f)
-                        .scaleX(focused ? 1.04f : 1.0f)
-                        .scaleY(focused ? 1.04f : 1.0f)
+                        .alpha(focused ? 1.0f : 0.85f)
+                        .translationY(0f)
+                        .scaleX(focused ? 1.05f : 1.0f)
+                        .scaleY(focused ? 1.05f : 1.0f)
                         .setDuration(focused ? 200 : 150).start();
+                Object tag = view.getTag();
+                int col = (tag instanceof Integer) ? (Integer) tag : 0x3320283A;
+                view.setBackground(createSquircle(col, focused, density));
                 int pos = getBindingAdapterPosition();
                 if (focused && listener != null && pos != RecyclerView.NO_POSITION) {
                     listener.onTileFocused(pos, view);

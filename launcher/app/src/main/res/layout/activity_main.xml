@@ -169,7 +169,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="📅 ไม่มีนัดหมายวันนี้"
+                        android:text="ไม่มีนัดหมายวันนี้"
                         android:textColor="#CC80D8FF"
                         android:textSize="11sp"
                         android:fontFamily="@font/outfit"
@@ -224,20 +224,25 @@
             </LinearLayout>
         </RelativeLayout>
 
-        <!-- The wrapper clips at the grid's edge; the grid itself must not clip so scaled tiles can overflow their cells. -->
-        <FrameLayout
+        <!-- Flexible space pushing the dock to the bottom, showcasing the wallpaper -->
+        <View
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1"
-            android:layout_marginTop="6dp">
+            android:layout_weight="1" />
+
+        <!-- Bottom Squircle Profile Dock Row -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="36dp"
+            android:clipChildren="false"
+            android:clipToPadding="false">
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/grid"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:paddingTop="10dp"
-                android:paddingBottom="24dp"
-                android:clipToPadding="true"
+                android:layout_height="wrap_content"
+                android:clipToPadding="false"
                 android:clipChildren="false"
                 android:overScrollMode="never"
                 android:scrollbars="none"
